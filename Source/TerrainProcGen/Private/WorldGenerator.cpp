@@ -19,6 +19,40 @@ AWorldGenerator::AWorldGenerator()
 
 }
 
+void AWorldGenerator::RemoveFoliageTile2(const int TileIndex)
+{
+	TArray<FProcMeshVertex> Vertices = TerrainMesh->GetProcMeshSection(TileIndex)->ProcVertexBuffer;
+
+	if (Vertices.Num() == 0)
+	{
+		return;
+	}
+
+	FVector FirstVertex = Vertices[0].Position + GetActorLocation();
+	FVector LastVertex = Vertices[Vertices.Num() - 1].Position + GetActorLocation();
+	float MaxHeight = AmplitudeLarge + AmplitudeMedium + AmplitudeSmall;
+	FBox Box = FBox(FVector(FirstVertex.X, FirstVertex.Y, MaxHeight * -1), FVector(LastVertex.X, LastVertex.Y, MaxHeight));
+
+	for (int i = 0; i < FoliageComponents.Num(); i++)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("RemoveFoliageTile2(): FoliageComponents size: %i, In-loop (i: %i)"), FoliageComponents.Num(), i);
+
+		TArray<int> FoliageToRemove = FoliageComponents[i]->GetInstancesOverlappingBox(Box);
+
+		FFoliageInstanceData* FoliageData = ReplaceableFoliagePool.Find(FoliageComponents[i]);
+		if (FoliageData)
+		{
+			FoliageData->Instances.Append(FoliageToRemove);
+		}
+		else
+		{
+			ReplaceableFoliagePool.Add(FoliageComponents[i], FFoliageInstanceData(FoliageToRemove));
+		}
+	}
+
+	return;
+}
+
 void AWorldGenerator::BeginPlay()
 {
 	Super::BeginPlay();
@@ -100,7 +134,6 @@ int AWorldGenerator::DrawTile()
 	int DrawnMeshSection;
 
 	int FurthestTileIndex = GetFurthestUpdatableTileIndex();
-	UE_LOG(LogTemp, Warning, TEXT("FurthestTileIndex: %i"), FurthestTileIndex);
 
 	if (FurthestTileIndex > -1)
 	{
@@ -112,9 +145,8 @@ int AWorldGenerator::DrawTile()
 
 		int ReplaceableMeshSection = ValueArray[FurthestTileIndex];
 		DrawnMeshSection = ReplaceableMeshSection;
-		RemoveFoliageTile(ReplaceableMeshSection);
+		RemoveFoliageTile2(ReplaceableMeshSection);
 
-		//TerrainMesh->UpdateMeshSection(ReplaceableMeshSection, SubVertices, SubNormals, SubUVs, TArray<FColor>(), SubTangents);
 		TerrainMesh->ClearMeshSection(ReplaceableMeshSection);
 		TerrainMesh->CreateMeshSection_LinearColor(ReplaceableMeshSection, SubVertices, SubTriangles, SubNormals, SubUVs, TArray<FLinearColor>(), SubTangents, true);
 
@@ -324,50 +356,58 @@ void AWorldGenerator::AddFoliageInstances(const FVector InLocation)
 void AWorldGenerator::SpawnFoliageCluster(UFoliageType_InstancedStaticMesh* FoliageType, UInstancedStaticMeshComponent* FoliageIsmComponent, const FVector ClusterLocation)
 {
 	int MaxSteps = FoliageSeed.RandRange(0, FoliageType->NumSteps);
-	int MaxSeeds = FoliageSeed.RandRange(0, FoliageType->SeedsPerStep);
 	FVector ClusterBase = ClusterLocation;
 
 	for (int i = 0; i < MaxSteps; i++)
 	{
 		ClusterBase += FoliageSeed.GetUnitVector() * FoliageType->AverageSpreadDistance;
-		int InstancesPerStep = 0;
 
-		for (int l = 0; l < MaxSeeds; l++)
+		FVector InstanceLocation = ClusterBase + FoliageSeed.GetUnitVector() * FoliageType->SpreadVariance;
+
+		FHitResult HitResult;
+		FCollisionQueryParams CollisionParams;
+		bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, InstanceLocation + FVector(0, 0, 2000), InstanceLocation + FVector(0, 0, -2000), ECC_WorldStatic, CollisionParams);
+
+		if (!bHit || HitResult.Component != TerrainMesh)
 		{
-			FVector InstanceLocation = ClusterBase + FoliageSeed.GetUnitVector() * FoliageType->SpreadVariance;
-
-			FHitResult HitResult;
-			FCollisionQueryParams CollisionParams;
-			bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, InstanceLocation + FVector(0, 0, 2000), InstanceLocation + FVector(0, 0, -2000), ECC_WorldStatic, CollisionParams);
-			
-			if (!bHit || HitResult.Component != TerrainMesh)
-			{
-				continue;
-			}
-
-			// Check ground slope
-			float DotProduct = FVector::DotProduct(HitResult.ImpactNormal, FVector::UpVector);
-			float SlopeAngle = FMath::RadiansToDegrees(FMath::Acos(DotProduct));
-
-			if (SlopeAngle < FoliageType->GroundSlopeAngle.Min || SlopeAngle > FoliageType->GroundSlopeAngle.Max)
-			{
-				continue;
-			}
-
-			FTransform InstanceTransform = FTransform();
-			InstanceTransform.SetLocation(HitResult.Location + FVector(0, 0, FoliageSeed.FRandRange(FoliageType->ZOffset.Min, FoliageType->ZOffset.Max)));
-			InstanceTransform.SetScale3D(FVector::One() * FoliageSeed.FRandRange(FoliageType->ProceduralScale.Min, FoliageType->ProceduralScale.Max));
-			if (FoliageType->RandomYaw)
-			{
-				InstanceTransform.SetRotation(FRotator(0, FoliageSeed.FRandRange(0, 360), 0).Quaternion());
-			}
-
-			FoliageIsmComponent->AddInstance(InstanceTransform, true);
-			InstancesPerStep++;
+			continue;
 		}
-		if (InstancesPerStep == 0)
+
+		// Check ground slope
+		float DotProduct = FVector::DotProduct(HitResult.ImpactNormal, FVector::UpVector);
+		float SlopeAngle = FMath::RadiansToDegrees(FMath::Acos(DotProduct));
+
+		if (SlopeAngle < FoliageType->GroundSlopeAngle.Min || SlopeAngle > FoliageType->GroundSlopeAngle.Max)
 		{
-			return;
+			continue;
+		}
+
+		// Check Z
+		if (HitResult.Location.Z < FoliageType->Height.Min || HitResult.Location.Z > FoliageType->Height.Max)
+		{
+			continue;
+		}
+
+		FTransform InstanceTransform = FTransform();
+		InstanceTransform.SetLocation(HitResult.Location + FVector(0, 0, FoliageSeed.FRandRange(FoliageType->ZOffset.Min, FoliageType->ZOffset.Max)));
+		InstanceTransform.SetScale3D(FVector::One() * FoliageSeed.FRandRange(FoliageType->ProceduralScale.Min, FoliageType->ProceduralScale.Max));
+		if (FoliageType->RandomYaw)
+		{
+			InstanceTransform.SetRotation(FRotator(0, FoliageSeed.FRandRange(0, 360), 0).Quaternion());
+		}
+
+		// Relocate foliage instances from pool
+		FFoliageInstanceData* FoliageData = ReplaceableFoliagePool.Find(FoliageIsmComponent);
+		if (FoliageData && FoliageData->Instances.Num() > 0)
+		{
+			//UE_LOG(LogTemp, Warning, TEXT("SpawnFoliageCluster(): Updating existing foliage data"));
+			FoliageIsmComponent->UpdateInstanceTransform(FoliageData->Instances[FoliageData->Instances.Num() - 1], InstanceTransform);
+			FoliageData->Instances.RemoveAt(FoliageData->Instances.Num() - 1);
+		}
+		else
+		{
+			//UE_LOG(LogTemp, Warning, TEXT("SpawnFoliageCluster(): Adding new foliage instance"));
+			FoliageIsmComponent->AddInstance(InstanceTransform, true);
 		}
 	}
 }

@@ -37,6 +37,9 @@ public:
 	UFUNCTION(BlueprintImplementableEvent)
 	bool RemoveFoliageTile(const int TileIndex);
 
+	UFUNCTION(BlueprintCallable)
+	void RemoveFoliageTile2(const int TileIndex);
+
 protected:
 	virtual void BeginPlay() override;
 
