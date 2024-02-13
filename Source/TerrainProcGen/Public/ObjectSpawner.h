@@ -25,6 +25,12 @@ public:
 	void GenerateSubTiles(const FVector TileCenter);
 
 	UFUNCTION(BlueprintCallable)
+	void RemoveFarTiles();
+
+	UFUNCTION(BlueprintCallable)
+	virtual void RemoveSubTiles(const FVector TileCenter);
+
+	UFUNCTION(BlueprintCallable)
 	virtual void SpawnObject(const FHitResult& Hit);
 
 protected:

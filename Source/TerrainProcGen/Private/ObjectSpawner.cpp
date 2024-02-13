@@ -39,6 +39,8 @@ FVector AObjectSpawner::GetPlayerCell()
 
 void AObjectSpawner::UpdateTiles()
 {
+	RemoveFarTiles();
+
 	FVector Origin = GetPlayerCell();
 	for (int y = CellCount * -.5f; y <= CellCount * .5f; y++)
 	{
@@ -90,5 +92,37 @@ void AObjectSpawner::GenerateSubTiles(const FVector TileCenter) // :UpdateTile(
 }
 
 void AObjectSpawner::SpawnObject(const FHitResult& Hit)
+{
+}
+
+void AObjectSpawner::RemoveFarTiles()
+{
+	FVector PlayerCell = GetPlayerCell();
+	TArray<FVector2D> SpawnedTilesCopy;
+	SpawnedTilesCopy.Append(ActiveTiles);
+	
+	for (int i = 0; i < SpawnedTilesCopy.Num(); i++)
+	{
+		FVector2D RelativeTileLocation = SpawnedTilesCopy[i] - FVector2D(PlayerCell);
+		if (FMath::Abs(RelativeTileLocation.X) > CellCount * .5f * CellSize || FMath::Abs(RelativeTileLocation.Y) > CellCount * .5f * CellSize)
+		{
+			FHitResult HitResult;
+			FVector TileCenter = FVector(SpawnedTilesCopy[i], PlayerCell.Z);
+			FCollisionQueryParams CollisionParams;
+			CollisionParams.AddIgnoredActor(GetWorld()->GetFirstPlayerController()->GetPawn());
+			GetWorld()->LineTraceSingleByChannel(HitResult, TileCenter + FVector::UpVector * TraceDistance, TileCenter - FVector::UpVector * TraceDistance, ECC_Visibility, CollisionParams);
+
+			if (HitResult.bBlockingHit)
+			{
+				DrawDebugBox(GetWorld(), TileCenter, FVector(CellSize * .5f), FColor::Emerald, false, 8);
+				RemoveSubTiles(HitResult.Location);
+				ActiveTiles.Remove(SpawnedTilesCopy[i]);
+			}
+			
+		}
+	}
+}
+
+void AObjectSpawner::RemoveSubTiles(const FVector TileCenter)
 {
 }

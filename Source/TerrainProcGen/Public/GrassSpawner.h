@@ -18,14 +18,9 @@ class TERRAINPROCGEN_API AGrassSpawner : public AObjectSpawner
 
 public:
 	void SpawnObject(const FHitResult& Hit) override;
+	void RemoveSubTiles(const FVector TileCenter) override;
 	
 protected:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grass Spawner|Defaults")
-	float GrassSizeMin = 1.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grass Spawner|Defaults")
-	float GrassSizeMax = 2.f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grass Spawner|Defaults")
 	TArray<UInstancedStaticMeshComponent*> FoliageComponents;
 
@@ -34,4 +29,8 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grass Spawner|Defaults")
 	TEnumAsByte<EPhysicalSurface> SupportedSurfaceType;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grass Spawner|Defaults")
+	FRandomStream GrassSeed;
+
 };
