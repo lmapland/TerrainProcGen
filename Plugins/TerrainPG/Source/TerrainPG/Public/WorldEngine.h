@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ProceduralMeshComponent.h"
-#include "WorldGenerator.generated.h"
+#include "WorldEngine.generated.h"
 
 class UProceduralMeshComponent;
 class UFoliageType_InstancedStaticMesh;
@@ -20,16 +20,15 @@ struct FFoliageInstanceData
 };
 
 UCLASS()
-class TERRAINPROCGEN_API AWorldGenerator : public AActor
+class TERRAINPG_API AWorldEngine : public AActor
 {
 	GENERATED_BODY()
 	
 public:
-	AWorldGenerator();
-	//virtual void Tick(float DeltaTime) override;
+	AWorldEngine();
 
 	UFUNCTION(BlueprintCallable)
-	void GenerateTerrain(const int InSectionIndexX, const int InSectionIndexY);
+	void GenerateTerrain(const int InSectionIndexX, const int InSectionIndexY, const int LODFactor);
 
 	UFUNCTION(BlueprintCallable)
 	int DrawTile();
@@ -44,7 +43,7 @@ protected:
 	virtual void BeginPlay() override;
 
 	UFUNCTION(BlueprintCallable)
-	void GenerateTerrainAsync(const int InSectionIndexX, const int InSectionIndexY);
+	void GenerateTerrainAsync(const int InSectionIndexX, const int InSectionIndexY, const int InLODLevel);
 
 	UFUNCTION(BlueprintCallable)
 	int GenHeight(FVector2D Location);
@@ -53,8 +52,8 @@ protected:
 	int GenerateHeightLayer(const FVector2D Location, const float InScale, const float InAmplitude, const FVector2D Offset);
 
 	/* For removing the seam between meshes */
-	void GetNormalsTangents(TArray<FVector> InVertices, TArray<int> InTriangles, TArray<FVector2D> InUVs, TArray<FVector>& OutNormals, TArray<FProcMeshTangent>& OutTangents, TArray<FVector>& OutVertices, TArray<int>& OutTriangles, TArray<FVector2D>& OutUVs);
-
+	void GetNormalsTangents(TArray<FVector> InVertices, TArray<FVector2D> InUVs, FVector2D InLODVertexCount, float InLODCellSize);
+	
 	UFUNCTION(BlueprintCallable)
 	FVector GetPlayerLocation();
 
@@ -83,38 +82,38 @@ protected:
 	UMaterialInterface* TerrainMaterial = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Procedural Generation|Defaults")
-	int XVertexCount = 5;
+	int XVertexCount = 10;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Procedural Generation|Defaults")
-	int YVertexCount = 5;
+	int YVertexCount = 10;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Procedural Generation|Defaults")
-	float CellSize = 100.f;
+	float CellSize = 2000.f;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Procedural Generation|Defaults")
-	int NumberSectionsX = 5;
+	int NumberSectionsX = 4;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Procedural Generation|Defaults")
-	int NumberSectionsY = 5;
+	int NumberSectionsY = 4;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Defaults")
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Defaults")
 	int MeshSectionIndex = 0;
 
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Height Params")
-	float ScaleLarge = 10000000.f; //0.00001f
+	float ScaleLarge = 20000.f; //0.00001f
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Height Params")
-	float ScaleMedium = 1000000; //0.0001f
+	float ScaleMedium = 3000.f; //0.0001f
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Height Params")
-	float ScaleSmall = 100000; //0.001f
+	float ScaleSmall = 200.f; //0.001f
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Height Params")
-	float AmplitudeLarge = 20000.f; // 10000
+	float AmplitudeLarge = 4000.f; // 10000
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Height Params")
-	float AmplitudeMedium = 10000.f;
+	float AmplitudeMedium = 1000.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Height Params")
 	float AmplitudeSmall = 500.f;
@@ -123,22 +122,23 @@ protected:
 	bool bRandomizeLayout = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Defaults")
-	FVector2D PerlinOffset;
+	FVector2D PerlinOffset = FVector2D(0.6);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Defaults")
-	TMap<FIntPoint, int> QueuedTiles;
+	TMap<FIntPoint, FIntPoint> QueuedTiles;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Defaults")
 	float TileDiscardDistance;
 
 	int SectionIndexX = 0;
 	int SectionIndexY = 0;
+	int LODLevel = 1;
 
 	TArray<int> Triangles;
+	TArray<int> SubTriangles;
 	TArray<FVector> SubNormals;
 	TArray<FProcMeshTangent> SubTangents;
 	TArray<FVector2D> SubUVs;
-	TArray<int> SubTriangles;
 	TArray<FVector> SubVertices;
 
 	UPROPERTY(BlueprintReadWrite)
@@ -156,7 +156,7 @@ protected:
 	bool RandomizeFoliage = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Foliage")
-	int InitialFoliageSeed = 0;
+	int InitialFoliageSeed = 27;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Foliage")
 	FRandomStream FoliageSeed;
@@ -194,13 +194,13 @@ protected:
 public:
 	FORCEINLINE int GetSectionIndexX() const { return SectionIndexX; }
 	FORCEINLINE int GetSectionIndexY() const { return SectionIndexY; }
-
+	FORCEINLINE int GetLODLevel() const { return LODLevel; }
 };
 
 class FAsyncWorldGenerator : public FNonAbandonableTask
 {
 public:
-	FAsyncWorldGenerator(AWorldGenerator* InWorldGenerator) : WorldGenerator(InWorldGenerator) {}
+	FAsyncWorldGenerator(AWorldEngine* InWorldGenerator) : WorldGenerator(InWorldGenerator) {}
 
 	FORCEINLINE TStatId GetStatId() const
 	{
@@ -210,5 +210,5 @@ public:
 	void DoWork();
 
 private:
-	AWorldGenerator* WorldGenerator;
+	AWorldEngine* WorldGenerator;
 };

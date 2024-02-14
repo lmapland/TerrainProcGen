@@ -1,15 +1,13 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "WorldGenerator.h"
+#include "WorldEngine.h"
 #include "KismetProceduralMeshLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/Character.h"
 #include "FoliageType_InstancedStaticMesh.h"
 
-//#include "Debug/DebugDrawComponent.h"
-
-AWorldGenerator::AWorldGenerator()
+AWorldEngine::AWorldEngine()
 {
 	PrimaryActorTick.bCanEverTick = false;
 
@@ -19,7 +17,7 @@ AWorldGenerator::AWorldGenerator()
 
 }
 
-void AWorldGenerator::RemoveFoliageTile2(const int TileIndex)
+void AWorldEngine::RemoveFoliageTile2(const int TileIndex)
 {
 	TArray<FProcMeshVertex> Vertices = TerrainMesh->GetProcMeshSection(TileIndex)->ProcVertexBuffer;
 
@@ -35,7 +33,7 @@ void AWorldGenerator::RemoveFoliageTile2(const int TileIndex)
 
 	for (int i = 0; i < FoliageComponents.Num(); i++)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("RemoveFoliageTile2(): FoliageComponents size: %i, In-loop (i: %i)"), FoliageComponents.Num(), i);
+		//UE_LOG(LogTemp, Warning, TEXT("RemoveFoliageTile2(): FoliageComponents size: %i, In-loop (i: %i)"), FoliageComponents.Num(), i);
 
 		TArray<int> FoliageToRemove = FoliageComponents[i]->GetInstancesOverlappingBox(Box);
 
@@ -53,80 +51,85 @@ void AWorldGenerator::RemoveFoliageTile2(const int TileIndex)
 	return;
 }
 
-void AWorldGenerator::BeginPlay()
+void AWorldEngine::BeginPlay()
 {
 	Super::BeginPlay();
 
 	TileDiscardDistance = CellSize * (NumberSectionsX + NumberSectionsY) / 2 * (XVertexCount + YVertexCount) / 2;
 
-	//UE_LOG(LogTemp, Warning, TEXT("TileDiscardDistance: %f"), TileDiscardDistance);
-
 	if (bRandomizeLayout)
 	{
 		PerlinOffset = FVector2D(FMath::FRandRange(-5000000.f, 5000000.f), FMath::FRandRange(-5000000.f, 5000000.f));
-		//AmplitudeLarge = AmplitudeLarge * FMath::FRandRange(.5f, 2.f);
-		//AmplitudeMedium = AmplitudeMedium * FMath::FRandRange(.5f, 2.f);
 	}
 }
 
-void AWorldGenerator::GenerateTerrain(const int InSectionIndexX, const int InSectionIndexY)
+void AWorldEngine::GenerateTerrain(const int InSectionIndexX, const int InSectionIndexY, const int LODFactor)
 {
+	FVector2D LODVertexCount;
+	LODVertexCount.X = XVertexCount / LODFactor;
+	LODVertexCount.Y = YVertexCount / LODFactor;
+	float LODCellSize = CellSize * LODFactor;
+	float XGap = ((XVertexCount - 1) * CellSize - (LODVertexCount.X - 1) * LODCellSize) / LODCellSize;
+	float YGap = ((YVertexCount - 1) * CellSize - (LODVertexCount.Y - 1) * LODCellSize) / LODCellSize;
+	LODVertexCount.X += FMath::CeilToInt(XGap);
+	LODVertexCount.Y += FMath::CeilToInt(YGap);
+
 	FVector Offset = FVector();
 	Offset.X = (XVertexCount - 1) * CellSize * InSectionIndexX;
-	Offset.Y = (YVertexCount - 1) * CellSize * InSectionIndexY;
+	Offset.Y = (XVertexCount - 1) * CellSize * InSectionIndexY;
 
 	TArray<FVector> Vertices;
 	FVector Vertex;
 	TArray<FVector2D> UVs;
 	FVector2D UV;
 
-	for (int y = -1; y <= YVertexCount; y++)
+	for (int y = -1; y <= LODVertexCount.Y; y++)
 	{
-		for (int x = -1; x <= XVertexCount; x++)
+		for (int x = -1; x <= LODVertexCount.X; x++)
 		{
-			Vertex.X = x * CellSize + Offset.X;
-			Vertex.Y = y * CellSize + Offset.Y;
+			Vertex.X = x * LODCellSize + Offset.X;
+			Vertex.Y = y * LODCellSize + Offset.Y;
 			Vertex.Z = GenHeight(FVector2D(Vertex.X, Vertex.Y));
 			Vertices.Add(Vertex);
 			//UE_LOG(LogTemp, Warning, TEXT("%i, %i (%f, %f, %f)"), y, x, Vertex.X, Vertex.Y, Vertex.Z);
-			//DrawDebugSphere(GetWorld(), Vertex, 5.f, 8, FColor::Red, true, 120.f);
 
-			UV.X = ((XVertexCount - 1) * InSectionIndexX + x) * (CellSize / 100.f);
-			UV.Y = ((YVertexCount - 1) * InSectionIndexY + y) * (CellSize / 100.f);
+			UV.X = ((LODVertexCount.X - 1) * InSectionIndexX + x) * (LODCellSize / 100.f);
+			UV.Y = ((LODVertexCount.Y - 1) * InSectionIndexY + y) * (LODCellSize / 100.f);
 			UVs.Add(UV);
-			//UE_LOG(LogTemp, Warning, TEXT("%i, %i (%f, %f)"), y, x, UV.X, UV.Y);
 		}
 	}
-	//UE_LOG(LogTemp, Warning, TEXT("GenerateTerrain(): after first for loop"));
-	if (Triangles.Num() == 0)
+
+	//if (Triangles.Num() == 0)
+	//{
+	Triangles.Empty();
+	for (int y = 0; y <= LODVertexCount.Y; y++)
 	{
-		for (int y = 0; y <= YVertexCount; y++)
+		for (int x = 0; x <= LODVertexCount.X; x++)
 		{
-			for (int x = 0; x <= XVertexCount; x++)
-			{
-				int XYVertexCount = x + (y * (XVertexCount + 2));
-				Triangles.Add(XYVertexCount);
-				//UE_LOG(LogTemp, Warning, TEXT("%i, %i: %i"), y, x, XYVertexCount);
-				Triangles.Add(XYVertexCount + (XVertexCount + 2));
-				//UE_LOG(LogTemp, Warning, TEXT("%i, %i: %i"), y, x, XYVertexCount + (XVertexCount + 2));
-				Triangles.Add(XYVertexCount + 1);
-				//UE_LOG(LogTemp, Warning, TEXT("%i, %i: %i"), y, x, XYVertexCount + 1);
+			int XYVertexCount = x + (y * (LODVertexCount.X + 2));
+			Triangles.Add(XYVertexCount);
+			//UE_LOG(LogTemp, Warning, TEXT("%i, %i: %i"), y, x, XYVertexCount);
+			Triangles.Add(XYVertexCount + (LODVertexCount.X + 2));
+			//UE_LOG(LogTemp, Warning, TEXT("%i, %i: %i"), y, x, XYVertexCount + (XVertexCount + 2));
+			Triangles.Add(XYVertexCount + 1);
+			//UE_LOG(LogTemp, Warning, TEXT("%i, %i: %i"), y, x, XYVertexCount + 1);
 
-				Triangles.Add(XYVertexCount + (XVertexCount + 2));
-				//UE_LOG(LogTemp, Warning, TEXT("%i, %i: %i"), y, x, XYVertexCount + (XVertexCount + 2) );
-				Triangles.Add(XYVertexCount + (XVertexCount + 2) + 1);
-				//UE_LOG(LogTemp, Warning, TEXT("%i, %i: %i"), y, x, XYVertexCount + (XVertexCount + 2) + 1);
-				Triangles.Add(XYVertexCount + 1);
-				//UE_LOG(LogTemp, Warning, TEXT("%i, %i: %i"), y, x, XYVertexCount + 1);
-			}
+			Triangles.Add(XYVertexCount + (LODVertexCount.X + 2));
+			//UE_LOG(LogTemp, Warning, TEXT("%i, %i: %i"), y, x, XYVertexCount + (XVertexCount + 2) );
+			Triangles.Add(XYVertexCount + (LODVertexCount.X + 2) + 1);
+			//UE_LOG(LogTemp, Warning, TEXT("%i, %i: %i"), y, x, XYVertexCount + (XVertexCount + 2) + 1);
+			Triangles.Add(XYVertexCount + 1);
+			//UE_LOG(LogTemp, Warning, TEXT("%i, %i: %i"), y, x, XYVertexCount + 1);
 		}
 	}
+	//}
 
-	GetNormalsTangents(Vertices, Triangles, UVs, SubNormals, SubTangents, SubVertices, SubTriangles, SubUVs);
+	GetNormalsTangents(Vertices, UVs, LODVertexCount, LODCellSize);
+	//GetNormalsTangents(Vertices, Triangles, UVs, SubNormals, SubTangents, SubVertices, SubTriangles, SubUVs);
 	bTileDataReady = true;
 }
 
-int AWorldGenerator::DrawTile()
+int AWorldEngine::DrawTile()
 {
 	//UE_LOG(LogTemp, Warning, TEXT("DrawTile()"));
 	bTileDataReady = false;
@@ -138,19 +141,19 @@ int AWorldGenerator::DrawTile()
 	if (FurthestTileIndex > -1)
 	{
 		// Found a tile that needs to be replaced
-		TArray<int> ValueArray;
+		TArray<FIntPoint> ValueArray;
 		TArray<FIntPoint> KeyArray;
 		QueuedTiles.GenerateKeyArray(KeyArray);
 		QueuedTiles.GenerateValueArray(ValueArray);
 
-		int ReplaceableMeshSection = ValueArray[FurthestTileIndex];
+		int ReplaceableMeshSection = ValueArray[FurthestTileIndex].X;
 		DrawnMeshSection = ReplaceableMeshSection;
 		RemoveFoliageTile2(ReplaceableMeshSection);
 
 		TerrainMesh->ClearMeshSection(ReplaceableMeshSection);
 		TerrainMesh->CreateMeshSection_LinearColor(ReplaceableMeshSection, SubVertices, SubTriangles, SubNormals, SubUVs, TArray<FLinearColor>(), SubTangents, true);
 
-		QueuedTiles.Add(FIntPoint(SectionIndexX, SectionIndexY), ReplaceableMeshSection);
+		QueuedTiles.Add(FIntPoint(SectionIndexX, SectionIndexY), FIntPoint(ReplaceableMeshSection, LODLevel));
 		QueuedTiles.Remove(KeyArray[FurthestTileIndex]);
 	}
 	else
@@ -172,13 +175,17 @@ int AWorldGenerator::DrawTile()
 	return DrawnMeshSection;
 }
 
-void AWorldGenerator::GenerateTerrainAsync(const int InSectionIndexX, const int InSectionIndexY)
+void AWorldEngine::GenerateTerrainAsync(const int InSectionIndexX, const int InSectionIndexY, const int InLODLevel)
 {
 	bGeneratorBusy = true;
 
+	UE_LOG(LogTemp, Warning, TEXT("GenerateTerrainAsync(): InLODLevel: %i"), InLODLevel);
 	SectionIndexX = InSectionIndexX;
 	SectionIndexY = InSectionIndexY;
-	QueuedTiles.Add(FIntPoint(SectionIndexX, SectionIndexY), MeshSectionIndex);
+	LODLevel = InLODLevel == 0 ? 1 : InLODLevel;
+
+	UE_LOG(LogTemp, Warning, TEXT("GenerateTerrainAsync(): LODLevel: %i"), LODLevel);
+	QueuedTiles.Add(FIntPoint(SectionIndexX, SectionIndexY), FIntPoint(MeshSectionIndex, LODLevel));
 
 	AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [&]()
 		{
@@ -190,89 +197,75 @@ void AWorldGenerator::GenerateTerrainAsync(const int InSectionIndexX, const int 
 	);
 }
 
-int AWorldGenerator::GenHeight(FVector2D Location)
+int AWorldEngine::GenHeight(FVector2D Location)
 {
 	return GenerateHeightLayer(Location, 1 / ScaleLarge, AmplitudeLarge, FVector2D(.1f) + PerlinOffset) + GenerateHeightLayer(Location, 1 / ScaleMedium, AmplitudeMedium, FVector2D(.2f) + PerlinOffset);
 }
 
-int AWorldGenerator::GenerateHeightLayer(const FVector2D Location, const float InScale, const float InAmplitude, const FVector2D Offset)
+int AWorldEngine::GenerateHeightLayer(const FVector2D Location, const float InScale, const float InAmplitude, const FVector2D Offset)
 {
-	float Result2 = FMath::PerlinNoise2D(Location * InScale + FVector2D(.1f, .1f) + Offset) * InAmplitude;
-	return Result2;
-
-	//UE_LOG(LogTemp, Warning, TEXT("PerlinNoise2D: InValue: (%f, %f); Perlin Result: %f"), Perlin2.X, Perlin2.Y, Result);
-
-	/*float X = Location.X * InScale * Offset.X;
-	float Y = Location.Y * InScale * Offset.Y;
-	UE_LOG(LogTemp, Warning, TEXT("PerlinNoise1D: NoiseX: %f, NoiseY: %f"), X, Y);
-
-	float NoiseX = FMath::PerlinNoise1D(X);
-	float NoiseY = FMath::PerlinNoise1D(Y);
-
-	float NoiseResult = NoiseX * NoiseY * InAmplitude;
-	UE_LOG(LogTemp, Warning, TEXT("PerlinNoise1D: NoiseX: %f, NoiseY: %f, Final Result: %f"), NoiseX, NoiseY, NoiseResult);
-	return NoiseResult;*/
+	float Result = FMath::PerlinNoise2D(Location * InScale + FVector2D(.1f, .1f) + Offset) * InAmplitude;
+	return Result;
 }
 
-void AWorldGenerator::GetNormalsTangents(TArray<FVector> InVertices, TArray<int> InTriangles, TArray<FVector2D> InUVs, TArray<FVector>& OutNormals, TArray<FProcMeshTangent>& OutTangents, TArray<FVector>& OutVertices, TArray<int>& OutTriangles, TArray<FVector2D>& OutUVs)
+void AWorldEngine::GetNormalsTangents(TArray<FVector> InVertices, TArray<FVector2D> InUVs, FVector2D InLODVertexCount, float InLODCellSize)
 {
-	//UE_LOG(LogTemp, Warning, TEXT("In GetNormalsTangents()"));
 	TArray<FVector> Normals;
 	TArray<FProcMeshTangent> Tangents;
 
-	UKismetProceduralMeshLibrary::CalculateTangentsForMesh(InVertices, InTriangles, InUVs, Normals, Tangents);
+	UKismetProceduralMeshLibrary::CalculateTangentsForMesh(InVertices, Triangles, InUVs, Normals, Tangents);
 
 	int Index = 0;
-	//UE_LOG(LogTemp, Warning, TEXT("%i, %i, %i, %i"), InVertices.Num(), InUVs.Num(), Normals.Num(), Tangents.Num());
-	for (int y = -1; y <= YVertexCount; y++)
+	for (int y = -1; y <= InLODVertexCount.Y; y++)
 	{
-		for (int x = -1; x <= XVertexCount; x++)
+		for (int x = -1; x <= InLODVertexCount.X; x++)
 		{
-			if (y > -1 && y < YVertexCount && x > -1 && x < XVertexCount)
+			if (y > -1 && y < InLODVertexCount.Y && x > -1 && x < InLODVertexCount.X)
 			{
-				OutVertices.Add(InVertices[Index]);
-				OutUVs.Add(InUVs[Index]);
-				OutNormals.Add(Normals[Index]);
-				OutTangents.Add(Tangents[Index]);
+				SubVertices.Add(InVertices[Index]);
+				SubUVs.Add(InUVs[Index]);
+				SubNormals.Add(Normals[Index]);
+				SubTangents.Add(Tangents[Index]);
 			}
 			Index++;
 		}
 	}
 
-	if (OutTriangles.Num() == 0)
+	//if (SubTriangles.Num() == 0)
+	//{
+	SubTriangles.Empty();
+	for (int y = 0; y < InLODVertexCount.Y - 1; y++)
 	{
-		for (int y = 0; y < YVertexCount - 1; y++)
+		for (int x = 0; x < InLODVertexCount.X - 1; x++)
 		{
-			for (int x = 0; x < XVertexCount - 1; x++)
-			{
-				int XYVertexCount = y * XVertexCount + x;
-				OutTriangles.Add(XYVertexCount);
-				OutTriangles.Add(XYVertexCount + XVertexCount);
-				OutTriangles.Add(XYVertexCount + 1);
+			int XYVertexCount = y * InLODVertexCount.X + x;
+			SubTriangles.Add(XYVertexCount);
+			SubTriangles.Add(XYVertexCount + InLODVertexCount.X);
+			SubTriangles.Add(XYVertexCount + 1);
 
-				OutTriangles.Add(XYVertexCount + XVertexCount);
-				OutTriangles.Add(XYVertexCount + XVertexCount + 1);
-				OutTriangles.Add(XYVertexCount + 1);
-			}
+			SubTriangles.Add(XYVertexCount + InLODVertexCount.X);
+			SubTriangles.Add(XYVertexCount + InLODVertexCount.X + 1);
+			SubTriangles.Add(XYVertexCount + 1);
 		}
 	}
+	//}
 
 	//UE_LOG(LogTemp, Warning, TEXT("%i, %i, %i, %i, %i"), OutVertices.Num(), OutTriangles.Num(), OutNormals.Num(), OutUVs.Num(), OutTangents.Num());
 }
 
-FVector AWorldGenerator::GetPlayerLocation()
+FVector AWorldEngine::GetPlayerLocation()
 {
 	ACharacter* Player = UGameplayStatics::GetPlayerCharacter(GetWorld(), 0);
 
 	return Player ? Player->GetActorLocation() : FVector(0.f);
 }
 
-FVector2D AWorldGenerator::GetTileLocation(FIntPoint TileCoordinate)
+FVector2D AWorldEngine::GetTileLocation(FIntPoint TileCoordinate)
 {
 	return FVector2D(TileCoordinate * FIntPoint(XVertexCount - 1, YVertexCount - 1) * CellSize) + FVector2D(XVertexCount - 1, YVertexCount - 1) * CellSize / 2;
 }
 
-FIntPoint AWorldGenerator::GetClosestQueuedTile()
+FIntPoint AWorldEngine::GetClosestQueuedTile()
 {
 	if (QueuedTiles.Num() == 0) return FIntPoint(0.f);
 
@@ -282,7 +275,7 @@ FIntPoint AWorldGenerator::GetClosestQueuedTile()
 	for (const auto& Tile : QueuedTiles)
 	{
 		const FIntPoint& Key = Tile.Key;
-		int Value = Tile.Value;
+		int Value = Tile.Value.X;
 		if (Value == -1) // Find only unrendered tiles
 		{
 			FVector2D TileLocation = GetTileLocation(Key);
@@ -299,7 +292,7 @@ FIntPoint AWorldGenerator::GetClosestQueuedTile()
 	return ClosestTile;
 }
 
-int AWorldGenerator::GetFurthestUpdatableTileIndex()
+int AWorldEngine::GetFurthestUpdatableTileIndex()
 {
 	if (QueuedTiles.Num() == 0) return -1;
 
@@ -310,7 +303,7 @@ int AWorldGenerator::GetFurthestUpdatableTileIndex()
 	for (const auto& Tile : QueuedTiles)
 	{
 		const FIntPoint& Key = Tile.Key;
-		int Value = Tile.Value;
+		int Value = Tile.Value.X;
 		if (Value != -1) // Find only rendered tiles
 		{
 			FVector2D TileLocation = GetTileLocation(Key);
@@ -328,7 +321,7 @@ int AWorldGenerator::GetFurthestUpdatableTileIndex()
 	return FurthestTileIndex;
 }
 
-void AWorldGenerator::AddFoliageInstances(const FVector InLocation)
+void AWorldEngine::AddFoliageInstances(const FVector InLocation)
 {
 	for (int FoliageTypeIndex = 0; FoliageTypeIndex < FoliageTypes.Num(); FoliageTypeIndex++)
 	{
@@ -353,7 +346,7 @@ void AWorldGenerator::AddFoliageInstances(const FVector InLocation)
 	}
 }
 
-void AWorldGenerator::SpawnFoliageCluster(UFoliageType_InstancedStaticMesh* FoliageType, UInstancedStaticMeshComponent* FoliageIsmComponent, const FVector ClusterLocation)
+void AWorldEngine::SpawnFoliageCluster(UFoliageType_InstancedStaticMesh* FoliageType, UInstancedStaticMeshComponent* FoliageIsmComponent, const FVector ClusterLocation)
 {
 	int MaxSteps = FoliageSeed.RandRange(0, FoliageType->NumSteps);
 	FVector ClusterBase = ClusterLocation;
@@ -412,13 +405,8 @@ void AWorldGenerator::SpawnFoliageCluster(UFoliageType_InstancedStaticMesh* Foli
 	}
 }
 
-//void AWorldGenerator::Tick(float DeltaTime)
-//{
-//	Super::Tick(DeltaTime);
-//
-//}
-
 void FAsyncWorldGenerator::DoWork()
 {
-	WorldGenerator->GenerateTerrain(WorldGenerator->GetSectionIndexX(), WorldGenerator->GetSectionIndexY());
+	UE_LOG(LogTemp, Warning, TEXT("FAsyncWorldGenerator::DoWork(): LODLevel: %i"), WorldGenerator->GetLODLevel());
+	WorldGenerator->GenerateTerrain(WorldGenerator->GetSectionIndexX(), WorldGenerator->GetSectionIndexY(), WorldGenerator->GetLODLevel());
 }
