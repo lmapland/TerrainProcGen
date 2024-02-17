@@ -75,6 +75,10 @@ protected:
 	UFUNCTION(BlueprintCallable)
 	void SpawnFoliageCluster(UFoliageType_InstancedStaticMesh* FoliageType, UInstancedStaticMeshComponent* FoliageIsmComponent, const FVector ClusterLocation);
 
+	/* The C++ version of "TileIsNotGenerated", defined in BP */
+	UFUNCTION(BlueprintCallable)
+	void QueueTileForGeneration(const int InSectionX, const int InSectionY, const int InMeshSectionIndex);
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Procedural Generation|Defaults")
 	UProceduralMeshComponent* TerrainMesh;
 
@@ -126,6 +130,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Defaults")
 	TMap<FIntPoint, FIntPoint> QueuedTiles;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Defaults")
+	TMap<FIntPoint, FIntPoint> RemoveLODqueue;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Defaults")
 	float TileDiscardDistance;
@@ -190,6 +197,19 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Foliage")
 	TMap<UInstancedStaticMeshComponent*, FFoliageInstanceData> ReplaceableFoliagePool;
+
+	/* Water level variables */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Procedural Generation|Sea")
+	UStaticMeshComponent* SeaComponent;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Sea")
+	bool bEnableSea = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Sea")
+	float SeaLevel = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Procedural Generation|Sea")
+	float SeaScale = 50000.f;
 
 public:
 	FORCEINLINE int GetSectionIndexX() const { return SectionIndexX; }

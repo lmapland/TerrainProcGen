@@ -15,6 +15,8 @@ AWorldEngine::AWorldEngine()
 	TerrainMesh->bUseAsyncCooking = true;
 	RootComponent = TerrainMesh;
 
+	SeaComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SeaComponent"));
+	SeaComponent->SetupAttachment(GetRootComponent());
 }
 
 void AWorldEngine::RemoveFoliageTile2(const int TileIndex)
@@ -135,14 +137,13 @@ int AWorldEngine::DrawTile()
 	bTileDataReady = false;
 
 	int DrawnMeshSection;
-
 	int FurthestTileIndex = GetFurthestUpdatableTileIndex();
+	TArray<FIntPoint> ValueArray;
+	TArray<FIntPoint> KeyArray;
 
 	if (FurthestTileIndex > -1)
 	{
 		// Found a tile that needs to be replaced
-		TArray<FIntPoint> ValueArray;
-		TArray<FIntPoint> KeyArray;
 		QueuedTiles.GenerateKeyArray(KeyArray);
 		QueuedTiles.GenerateValueArray(ValueArray);
 
@@ -172,6 +173,19 @@ int AWorldEngine::DrawTile()
 	SubTangents.Empty();
 	SubUVs.Empty();
 
+	// Remove outdated LODs
+	KeyArray.Empty();
+	ValueArray.Empty();
+	RemoveLODqueue.GenerateKeyArray(KeyArray);
+	RemoveLODqueue.GenerateValueArray(ValueArray);
+	if (RemoveLODqueue.Contains(FIntPoint(SectionIndexX, SectionIndexY)))
+	{
+		FIntPoint* Val = RemoveLODqueue.Find(FIntPoint(SectionIndexX, SectionIndexY));
+		RemoveFoliageTile(Val->X);
+		TerrainMesh->ClearMeshSection(Val->X);
+		RemoveLODqueue.Remove(FIntPoint(SectionIndexX, SectionIndexY));
+	}
+
 	return DrawnMeshSection;
 }
 
@@ -179,12 +193,12 @@ void AWorldEngine::GenerateTerrainAsync(const int InSectionIndexX, const int InS
 {
 	bGeneratorBusy = true;
 
-	UE_LOG(LogTemp, Warning, TEXT("GenerateTerrainAsync(): InLODLevel: %i"), InLODLevel);
+	//UE_LOG(LogTemp, Warning, TEXT("GenerateTerrainAsync(): InLODLevel: %i"), InLODLevel);
 	SectionIndexX = InSectionIndexX;
 	SectionIndexY = InSectionIndexY;
 	LODLevel = InLODLevel == 0 ? 1 : InLODLevel;
 
-	UE_LOG(LogTemp, Warning, TEXT("GenerateTerrainAsync(): LODLevel: %i"), LODLevel);
+	//UE_LOG(LogTemp, Warning, TEXT("GenerateTerrainAsync(): LODLevel: %i"), LODLevel);
 	QueuedTiles.Add(FIntPoint(SectionIndexX, SectionIndexY), FIntPoint(MeshSectionIndex, LODLevel));
 
 	AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [&]()
@@ -405,8 +419,45 @@ void AWorldEngine::SpawnFoliageCluster(UFoliageType_InstancedStaticMesh* Foliage
 	}
 }
 
+void AWorldEngine::QueueTileForGeneration(const int InSectionX, const int InSectionY, const int InMeshSectionIndex)
+{
+	// Don't generate tile if tile is already outside the player's DiscardDistance
+	FVector PlayerLocation = GetPlayerLocation();
+	float Distance = FVector2D::Distance(FVector2D(PlayerLocation.X, PlayerLocation.Y), GetTileLocation(FIntPoint(InSectionX, InSectionY)));
+
+	if (Distance > TileDiscardDistance)
+	{
+		return;
+	}
+
+	// Get current LOD
+	float XLoc = PlayerLocation.X / ((XVertexCount - 1) * CellSize);
+	float YLoc = PlayerLocation.Y / ((YVertexCount - 1) * CellSize);
+	Distance = FVector2D::Distance(FVector2D(InSectionX + 0.5f, InSectionY + 0.5f), FVector2D(XLoc, YLoc));
+	int LODToUse = FMath::TruncToInt(FMath::Max(1.f, Distance));
+	FIntPoint SectionPoint = FIntPoint(InSectionX, InSectionY);
+
+	// Check if the given SectionX and Y are actually in the QueuedTiles TMap
+	// If yes, check their LOD level and make sure we don't need to adjust the LOD level
+	// If no, add this tile to the QueuedTiles TMap
+	FIntPoint* FoundTile = QueuedTiles.Find(SectionPoint);
+	if (FoundTile == nullptr)
+	{
+		QueuedTiles.Add(SectionPoint, FIntPoint(-1, LODToUse));
+	}
+	else if (FoundTile->Y != LODToUse) // Tile exists; check data to decide what to do with it
+	{
+		if (FoundTile->X != -1)
+		{
+			// Need to remove the current Tile and add this Tile to be queued so it can be generated with the correct LOD
+			RemoveLODqueue.Add(SectionPoint, *FoundTile);
+		}
+
+		QueuedTiles.Add(SectionPoint, FIntPoint(-1, LODToUse));
+	}
+}
+
 void FAsyncWorldGenerator::DoWork()
 {
-	UE_LOG(LogTemp, Warning, TEXT("FAsyncWorldGenerator::DoWork(): LODLevel: %i"), WorldGenerator->GetLODLevel());
 	WorldGenerator->GenerateTerrain(WorldGenerator->GetSectionIndexX(), WorldGenerator->GetSectionIndexY(), WorldGenerator->GetLODLevel());
 }
