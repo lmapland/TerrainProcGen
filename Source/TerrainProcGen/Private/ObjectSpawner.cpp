@@ -85,13 +85,13 @@ void AObjectSpawner::GenerateSubTiles(const FVector TileCenter) // :UpdateTile(
 
 			if (HitResult.bBlockingHit)
 			{
-				SpawnObject(HitResult);
+				SpawnObject(HitResult, TileCenter);
 			}
 		}
 	}
 }
 
-void AObjectSpawner::SpawnObject(const FHitResult& Hit)
+void AObjectSpawner::SpawnObject(const FHitResult& Hit, const FVector TileCenter)
 {
 }
 

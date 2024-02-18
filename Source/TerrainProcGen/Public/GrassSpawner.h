@@ -8,16 +8,13 @@
 
 class UFoliageType_InstancedStaticMesh;
 
-/**
- * 
- */
 UCLASS()
 class TERRAINPROCGEN_API AGrassSpawner : public AObjectSpawner
 {
 	GENERATED_BODY()
 
 public:
-	void SpawnObject(const FHitResult& Hit) override;
+	void SpawnObject(const FHitResult& Hit, const FVector TileCenter) override;
 	void RemoveSubTiles(const FVector TileCenter) override;
 	
 protected:

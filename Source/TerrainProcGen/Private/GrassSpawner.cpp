@@ -3,7 +3,7 @@
 #include "GrassSpawner.h"
 #include "FoliageType_InstancedStaticMesh.h"
 
-void AGrassSpawner::SpawnObject(const FHitResult& Hit)
+void AGrassSpawner::SpawnObject(const FHitResult& Hit, const FVector TileCenter)
 {
 	if (Hit.Location.Z < -100.f)
 	{

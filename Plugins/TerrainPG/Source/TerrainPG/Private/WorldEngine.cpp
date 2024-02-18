@@ -21,6 +21,8 @@ AWorldEngine::AWorldEngine()
 
 void AWorldEngine::RemoveFoliageTile2(const int TileIndex)
 {
+	if (!TerrainMesh->GetProcMeshSection(TileIndex)) return;
+
 	TArray<FProcMeshVertex> Vertices = TerrainMesh->GetProcMeshSection(TileIndex)->ProcVertexBuffer;
 
 	if (Vertices.Num() == 0)

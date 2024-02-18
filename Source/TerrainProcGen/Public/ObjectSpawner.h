@@ -31,7 +31,7 @@ public:
 	virtual void RemoveSubTiles(const FVector TileCenter);
 
 	UFUNCTION(BlueprintCallable)
-	virtual void SpawnObject(const FHitResult& Hit);
+	virtual void SpawnObject(const FHitResult& Hit, const FVector TileCenter);
 
 protected:
 	virtual void BeginPlay() override;
